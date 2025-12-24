@@ -19,6 +19,16 @@ pipeline {
                     ls -la
                 '''
             }
+            
+        }
+
+        stage ('test') {
+            steps{
+                  sh '''
+                    test -f public/computer.txt
+                '''
+            }
+
         }
     }
 }
