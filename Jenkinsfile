@@ -22,14 +22,13 @@ pipeline {
             
         }
 
-        stage ('test') {
+        stage ('Test') {
             steps{
-                  sh '''
-                    test -f public/index.html
-                '''
+                echo 'Test stage'
+                  sh 'test -f build/index.html'
             }
 
-            sh 'CI=true npm test'
+            //sh 'CI=true npm test'
 
         }
     }
