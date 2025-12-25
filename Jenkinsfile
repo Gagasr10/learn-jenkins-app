@@ -10,7 +10,7 @@ pipeline {
                 }
             }
             steps {
-                sh'''
+                sh '''
                     ls -la
                     node --version
                     npm --version
@@ -19,24 +19,22 @@ pipeline {
                     ls -la
                 '''
             }
-            
         }
 
-        stage ('Test') {
-             agent {
+        stage('Test') {
+            agent {
                 docker {
                     image 'node:18-alpine'
                     reuseNode true
                 }
-
-            steps{
-                sh 'test -f build/index.html'
-                npm test
             }
 
-            //sh 'CI=true npm test'
-
+            steps {
+                sh '''
+                    test -f build/index.html
+                    npm test
+                '''
+            }
         }
     }
-}
 }
