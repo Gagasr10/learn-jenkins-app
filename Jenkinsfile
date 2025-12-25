@@ -39,7 +39,7 @@ pipeline {
         stage('E2E') {
             agent {
                 docker {
-                    image 'mcr.microsoft.com/playwright:v1.39.0-noble'  // ISPRAVLJENA VERZIJA!
+                    image 'mcr.microsoft.com/playwright'  // PROMENJENO: Bez verzije!
                     reuseNode true
                 }
             }
@@ -56,7 +56,7 @@ pipeline {
 
     post {
         always {
-             junit 'jest-result/junit.xml'  // ISPRAVLJENA PUTANJA!
+            junit 'jest-results/junit.xml'  // PROMENJENO: jest-results (sa 's')
             echo 'Pipeline completed!'
         }
     }
