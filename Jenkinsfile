@@ -39,12 +39,16 @@ pipeline {
         stage('E2E') {
             agent {
                 docker {
-                    image 'mcr.microsoft.com/playwright'  // PROMENJENO: Bez verzije!
+                    image 'node:18-bullseye'  // PROMENJENO: Bullseye umesto Playwright
                     reuseNode true
                 }
             }
             steps {
                 sh '''
+                    # Instaliraj Playwright
+                    npm install @playwright/test
+                    npx playwright install --with-deps chromium
+                    
                     npm install serve
                     node_modules/.bin/serve -s build &
                     sleep 10
