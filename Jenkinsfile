@@ -25,9 +25,11 @@ pipeline {
         stage ('test') {
             steps{
                   sh '''
-                    test -f public/computer.txt
+                    test -f public/index.html
                 '''
             }
+
+            sh 'CI=true npm test'
 
         }
     }
