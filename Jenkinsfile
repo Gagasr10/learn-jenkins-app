@@ -28,7 +28,6 @@ pipeline {
                     reuseNode true
                 }
             }
-
             steps {
                 sh '''
                     test -f build/index.html
@@ -36,15 +35,14 @@ pipeline {
                 '''
             }
         }
+        
         stage('E2E') {
             agent {
                 docker {
-                    image 'mcr.microsoft.com/playwright:v1.57.0-noble'
+                    image 'mcr.microsoft.com/playwright:v1.39.0-noble'  // ISPRAVLJENA VERZIJA!
                     reuseNode true
-                    
                 }
             }
-
             steps {
                 sh '''
                     npm install serve
@@ -56,9 +54,10 @@ pipeline {
         }
     }
 
-    post{
+    post {
         always {
-            junit 'jest-result/junit.xml'
+             junit 'jest-result/junit.xml'  // ISPRAVLJENA PUTANJA!
+            echo 'Pipeline completed!'
         }
     }
 }
