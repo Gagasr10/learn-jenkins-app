@@ -21,7 +21,7 @@ pipeline {
       }
     }
 
-    stage('Build') {
+    stage('Deploy') {
       agent {
         docker {
           image 'node:18-alpine'
@@ -29,14 +29,11 @@ pipeline {
         }
       }
       steps {
-        unstash 'deps'
+        
         sh '''
-          npm run build
-          test -f build/index.html
-          ls -la
+          npm install -g netlify-cli
+          netlify --version
         '''
-        // build + e2e test fajlovi + playwright config
-        stash name: 'app', includes: 'build/**,e2e/**,playwright.config.js'
       }
     }
 
