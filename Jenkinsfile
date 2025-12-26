@@ -57,7 +57,7 @@ pipeline {
                     sleep 3
 
                     # Pokreni E2E (baseURL u playwright.config.js treba da gađa http://localhost:3000)
-                    npx playwright test
+                    npx playwright test --reporter=html
                 '''
             }
             post {
