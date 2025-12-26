@@ -31,36 +31,47 @@ pipeline {
             steps {
                 sh '''
                     test -f build/index.html
-                    npm test
+                    CI=true npm test
                 '''
             }
         }
-        
+
         stage('E2E') {
             agent {
                 docker {
-                    image 'node:18-bullseye'  // PROMENJENO: Bullseye umesto Playwright
+                    // Verzija usklađena sa @playwright/test ^1.39.0
+                    image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
                     reuseNode true
                 }
             }
             steps {
                 sh '''
-                    # Instaliraj Playwright
-                    npm install @playwright/test
-                    npx playwright install --with-deps chromium
-                    
-                    npm install serve
-                    node_modules/.bin/serve -s build &
-                    sleep 10
+                    node --version
+                    npm --version
+
+                    # Uveri se da dependencies postoje (i da playwright test runner postoji)
+                    npm ci
+
+                    # Startuj built app statički (bez global install-a)
+                    npx serve -s build -l 3000 &
+                    sleep 3
+
+                    # Pokreni E2E (baseURL u playwright.config.js treba da gađa http://localhost:3000)
                     npx playwright test
                 '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'playwright-report/**', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'test-results/**', allowEmptyArchive: true
+                }
             }
         }
     }
 
     post {
         always {
-            junit 'jest-results/junit.xml'  // PROMENJENO: jest-results (sa 's')
+            junit 'jest-results/junit.xml'
             echo 'Pipeline completed!'
         }
     }
