@@ -4,7 +4,7 @@ pipeline {
     environment {
         NETLIFY_SITE_ID     = '48050a32-ad69-42cc-9c19-dd33ee11812b'
         NETLIFY_AUTH_TOKEN  = credentials('netlify-token')
-        REACT_APP_VERSION   = "1.0.$BUILD_ID"
+        REACT_APP_VERSION   = "1.0.${BUILD_ID}"
     }
 
     stages {
@@ -18,12 +18,19 @@ pipeline {
             }
             steps {
                 sh '''
+                    set -e
                     ls -la
                     node --version
                     npm --version
+
+                    echo "REACT_APP_VERSION (build): $REACT_APP_VERSION"
+
                     npm ci
+                    export REACT_APP_VERSION="$REACT_APP_VERSION"
                     npm run build
+
                     ls -la
+                    test -f build/index.html
                 '''
             }
         }
@@ -37,11 +44,10 @@ pipeline {
                             reuseNode true
                         }
                     }
-
                     steps {
                         sh '''
-                            #test -f build/index.html
-                            npm test
+                            set -e
+                            npm test -- --watchAll=false
                         '''
                     }
                     post {
@@ -58,19 +64,31 @@ pipeline {
                             reuseNode true
                         }
                     }
-
                     steps {
                         sh '''
+                            set -e
+                            echo "REACT_APP_VERSION (e2e expected): $REACT_APP_VERSION"
+
                             npm install serve
-                            node_modules/.bin/serve -s build &
+                            node_modules/.bin/serve -s build -l 3000 &
                             sleep 10
-                            npx playwright test  --reporter=html
+
+                            export REACT_APP_VERSION="$REACT_APP_VERSION"
+                            npx playwright test --reporter=html
                         '''
                     }
-
                     post {
                         always {
-                            publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Local E2E', reportTitles: '', useWrapperFileDirectly: true])
+                            publishHTML([
+                                allowMissing: false,
+                                alwaysLinkToLastBuild: false,
+                                keepAll: false,
+                                reportDir: 'playwright-report',
+                                reportFiles: 'index.html',
+                                reportName: 'Local E2E',
+                                reportTitles: '',
+                                useWrapperFileDirectly: true
+                            ])
                         }
                     }
                 }
@@ -80,62 +98,55 @@ pipeline {
         stage('Deploy staging') {
             agent {
                 docker {
-                    image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
+                    image 'node:18-alpine'
                     reuseNode true
                 }
             }
-
-            environment {
-                CI_ENVIRONMENT_URL = 'STAGING_URL_TO_BE_SET'
-            }
-
             steps {
                 sh '''
-                    npm install netlify-cli node-jq
+                    set -e
+
+                    # Pin netlify-cli to a Node18-friendly version
+                    npm install netlify-cli@21.6.0 node-jq
+
                     node_modules/.bin/netlify --version
                     echo "Deploying to staging. Site ID: $NETLIFY_SITE_ID"
-                    node_modules/.bin/netlify status
-                    node_modules/.bin/netlify deploy --dir=build --json > deploy-output.json
-                    CI_ENVIRONMENT_URL=$(node_modules/.bin/node-jq -r '.deploy_url' deploy-output.json)
-                    npx playwright test  --reporter=html
-                '''
-            }
 
-            post {
-                always {
-                    publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Staging E2E', reportTitles: '', useWrapperFileDirectly: true])
-                }
+                    # Avoid "netlify link" dependency: pass site/auth explicitly
+                    node_modules/.bin/netlify deploy \
+                      --dir=build \
+                      --site="$NETLIFY_SITE_ID" \
+                      --auth="$NETLIFY_AUTH_TOKEN" \
+                      --json > deploy-output.json
+
+                    echo "Staging URL:"
+                    node_modules/.bin/node-jq -r '.deploy_url' deploy-output.json
+                '''
             }
         }
 
         stage('Deploy prod') {
             agent {
                 docker {
-                    image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
+                    image 'node:18-alpine'
                     reuseNode true
                 }
             }
-
-            environment {
-                CI_ENVIRONMENT_URL = 'https://astonishing-crostata-78f01e.netlify.app'
-            }
-
             steps {
                 sh '''
-                    node --version
-                    npm install netlify-cli
-                    node_modules/.bin/netlify --version
-                    echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
-                    node_modules/.bin/netlify status
-                    node_modules/.bin/netlify deploy --dir=build --prod
-                    npx playwright test  --reporter=html
-                '''
-            }
+                    set -e
 
-            post {
-                always {
-                    publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Prod E2E', reportTitles: '', useWrapperFileDirectly: true])
-                }
+                    npm install netlify-cli@21.6.0
+                    node_modules/.bin/netlify --version
+
+                    echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
+
+                    node_modules/.bin/netlify deploy \
+                      --dir=build \
+                      --prod \
+                      --site="$NETLIFY_SITE_ID" \
+                      --auth="$NETLIFY_AUTH_TOKEN"
+                '''
             }
         }
     }
