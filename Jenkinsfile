@@ -93,35 +93,33 @@ pipeline {
 
     /* ================= DEPLOY ================= */
     stage('Deploy staging') {
-  agent {
-    docker {
-      image 'node:18-alpine'
-      reuseNode true
+      agent {
+        docker {
+          image 'node:18-alpine'
+          reuseNode true
+        }
+      }
+      steps {
+        unstash 'app'
+        sh '''
+          npx netlify-cli --version
+          echo "Deploying to staging. Site ID: $NETLIFY_SITE_ID"
+          npx netlify-cli status
+
+          # KLJUČ: spreči Netlify da pokušava build na svom serveru (bash ENOENT)
+          npx netlify-cli deploy --dir=build --no-build
+        '''
+      }
     }
-  }
-  steps {
-    unstash 'app'
-    sh '''
-      npx netlify-cli --version
-      echo "Deploying to staging. Site ID: $NETLIFY_SITE_ID"
-      npx netlify-cli status
 
-      # KLJUČ: spreči Netlify da pokušava build na svom serveru (bash ENOENT)
-      npx netlify-cli deploy --dir=build --no-build
-    '''
-  }
-}
+    stage('Approval') {
+      steps {
+        timeout(time: 15, unit: 'MINUTES') {
+          input message: 'Do you wish to deploy to production?', ok: 'Yes, I am sure!'
+        }
+      }
+    }
 
-stage('Approval'){
-  steps{
-      timeout(time: 15, unit: 'MINUTES') {
-       input message: 'Do you wish to deploy to production?', ok: 'Yes, I am sure!'
-  }
-  
-
-}
-
-    
     stage('Deploy prod') {
       agent {
         docker {
