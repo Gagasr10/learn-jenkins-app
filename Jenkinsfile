@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        NETLIFY_SITE_ID = '48050a32-ad69-42cc-9c19-dd33ee11812b'
-        NETLIFY_AUTH_TOKEN = credentials('netlify-token')
+        NETLIFY_SITE_ID     = '48050a32-ad69-42cc-9c19-dd33ee11812b'
+        NETLIFY_AUTH_TOKEN  = credentials('netlify-token')
     }
 
     stages {
@@ -79,47 +79,30 @@ pipeline {
         stage('Deploy staging') {
             agent {
                 docker {
-                    image 'node:18-alpine'
-                    reuseNode true
-                }
-            }
-            steps {
-                sh '''
-                    npm install netlify-cli node-jq
-                    node_modules/.bin/netlify --version
-
-                    echo "Deploying to staging. Site ID: $NETLIFY_SITE_ID"
-                    node_modules/.bin/netlify status --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN" || true
-
-                    node_modules/.bin/netlify deploy --dir=build --json --no-build \
-                      --site "$NETLIFY_SITE_ID" \
-                      --auth "$NETLIFY_AUTH_TOKEN" > deploy-output.json
-                '''
-                script {
-                    env.STAGING_URL = sh(
-                        script: "node_modules/.bin/node-jq -r '.deploy_url' deploy-output.json",
-                        returnStdout: true
-                    ).trim()
-                    echo "STAGING_URL = ${env.STAGING_URL}"
-                }
-            }
-        }
-
-        stage('Staging E2E') {
-            agent {
-                docker {
                     image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
                     reuseNode true
                 }
             }
 
             environment {
-                CI_ENVIRONMENT_URL = "${env.STAGING_URL}"
+                CI_ENVIRONMENT_URL = 'STAGING_URL_TO_BE_SET'
             }
 
             steps {
                 sh '''
-                    npx playwright test  --reporter=html
+                    npm install netlify-cli node-jq
+                    node_modules/.bin/netlify --version
+                    echo "Deploying to staging. Site ID: $NETLIFY_SITE_ID"
+                    node_modules/.bin/netlify status --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
+
+                    node_modules/.bin/netlify deploy --dir=build --json --no-build \
+                      --site "$NETLIFY_SITE_ID" \
+                      --auth "$NETLIFY_AUTH_TOKEN" > deploy-output.json
+
+                    CI_ENVIRONMENT_URL=$(node_modules/.bin/node-jq -r '.deploy_url' deploy-output.json)
+                    echo "Staging URL: $CI_ENVIRONMENT_URL"
+
+                    CI_ENVIRONMENT_URL="$CI_ENVIRONMENT_URL" npx playwright test --reporter=html
                 '''
             }
 
@@ -141,28 +124,6 @@ pipeline {
         stage('Deploy prod') {
             agent {
                 docker {
-                    image 'node:18-alpine'
-                    reuseNode true
-                }
-            }
-            steps {
-                sh '''
-                    npm install netlify-cli
-                    node_modules/.bin/netlify --version
-
-                    echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
-                    node_modules/.bin/netlify status --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN" || true
-
-                    node_modules/.bin/netlify deploy --dir=build --prod --no-build \
-                      --site "$NETLIFY_SITE_ID" \
-                      --auth "$NETLIFY_AUTH_TOKEN"
-                '''
-            }
-        }
-
-        stage('Prod E2E') {
-            agent {
-                docker {
                     image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
                     reuseNode true
                 }
@@ -174,7 +135,17 @@ pipeline {
 
             steps {
                 sh '''
-                    npx playwright test  --reporter=html
+                    node --version
+                    npm install netlify-cli
+                    node_modules/.bin/netlify --version
+                    echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
+                    node_modules/.bin/netlify status --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
+
+                    node_modules/.bin/netlify deploy --dir=build --prod --no-build \
+                      --site "$NETLIFY_SITE_ID" \
+                      --auth "$NETLIFY_AUTH_TOKEN"
+
+                    CI_ENVIRONMENT_URL="$CI_ENVIRONMENT_URL" npx playwright test --reporter=html
                 '''
             }
 
