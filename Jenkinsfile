@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        NETLIFY_SITE_ID = '03d4042d-476c-4668-9ce8-34352dad73e4'
-        NETLIFY_AUTH_TOKEN = credentials('netlify-token')
+        NETLIFY_SITE_ID     = '48050a32-ad69-42cc-9c19-dd33ee11812b'
+        NETLIFY_AUTH_TOKEN  = credentials('netlify-token')
     }
 
     stages {
@@ -89,7 +89,12 @@ pipeline {
                     node_modules/.bin/netlify --version
                     echo "Deploying to staging. Site ID: $NETLIFY_SITE_ID"
                     node_modules/.bin/netlify status
-                    node_modules/.bin/netlify deploy --dir=build --json > deploy-output.json
+
+                    node_modules/.bin/netlify deploy --dir=build --json \
+                      --site "$NETLIFY_SITE_ID" \
+                      --auth "$NETLIFY_AUTH_TOKEN" \
+                      --no-build > deploy-output.json
+
                     node_modules/.bin/node-jq -r '.deploy_url' deploy-output.json
                 '''
             }
@@ -116,7 +121,11 @@ pipeline {
                     node_modules/.bin/netlify --version
                     echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
                     node_modules/.bin/netlify status
-                    node_modules/.bin/netlify deploy --dir=build --prod
+
+                    node_modules/.bin/netlify deploy --dir=build --prod \
+                      --site "$NETLIFY_SITE_ID" \
+                      --auth "$NETLIFY_AUTH_TOKEN" \
+                      --no-build
                 '''
             }
         }
