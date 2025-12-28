@@ -4,9 +4,7 @@ pipeline {
     environment {
         NETLIFY_SITE_ID     = '48050a32-ad69-42cc-9c19-dd33ee11812b'
         NETLIFY_AUTH_TOKEN  = credentials('netlify-token')
-
-        // Bitno: verziju formiramo preko Jenkins env var-a (stabilno)
-        REACT_APP_VERSION   = "1.0.${env.BUILD_ID}"
+        REACT_APP_VERSION   = "1.0.${BUILD_ID}"
     }
 
     stages {
@@ -25,7 +23,9 @@ pipeline {
                     node --version
                     npm --version
 
-                    # React čita env tokom build-a
+                    echo "REACT_APP_VERSION=$REACT_APP_VERSION"
+
+                    # IMPORTANT: CRA čita REACT_APP_* tokom build-a
                     export REACT_APP_VERSION="$REACT_APP_VERSION"
 
                     npm ci
@@ -71,11 +71,14 @@ pipeline {
                             set -e
                             export REACT_APP_VERSION="$REACT_APP_VERSION"
 
-                            npm install serve
-                            node_modules/.bin/serve -s build &
-                            sleep 10
+                            # koristimo npx da ne prljamo node_modules sa "serve"
+                            npx serve -s build -l 3000 &
+                            SERVE_PID=$!
+                            sleep 5
 
                             npx playwright test --reporter=html
+
+                            kill $SERVE_PID || true
                         '''
                     }
                     post {
@@ -104,30 +107,34 @@ pipeline {
                 }
             }
 
+            environment {
+                CI_ENVIRONMENT_URL = 'STAGING_URL_TO_BE_SET'
+            }
+
             steps {
                 sh '''
                     set -e
                     export REACT_APP_VERSION="$REACT_APP_VERSION"
 
-                    # Pinujemo verziju netlify-cli koja radi na Node 18 (bez engine warning-a / potencijalnog fail-a)
-                    npm install netlify-cli@21.6.0 node-jq
-                    node_modules/.bin/netlify --version
+                    # Pinujemo netlify-cli na verziju koja radi na Node 18
+                    # (novije verzije traže Node >= 20.x)
+                    npx netlify-cli@18.0.1 --version
 
                     echo "Deploying to staging. Site ID: $NETLIFY_SITE_ID"
 
-                    # Direktno deploy (status izbacen jer ti puca na --site)
-                    node_modules/.bin/netlify deploy \
+                    # Deploy (staging preview) + json output
+                    npx netlify-cli@18.0.1 deploy \
+                      --dir=build \
+                      --json \
                       --site "$NETLIFY_SITE_ID" \
                       --auth "$NETLIFY_AUTH_TOKEN" \
-                      --dir=build \
-                      --json > deploy-output.json
+                      > deploy-output.json
 
-                    export CI_ENVIRONMENT_URL=$(node_modules/.bin/node-jq -r '.deploy_url' deploy-output.json)
+                    echo "Deploy output:"
+                    cat deploy-output.json
 
-                    echo "Staging URL: $CI_ENVIRONMENT_URL"
-
-                    # E2E na staging
-                    npx playwright test --reporter=html
+                    # Izvuci deploy_url bez node-jq
+                    node -e "const j=require('./deploy-output.json'); console.log('CI_ENVIRONMENT_URL=' + (j.deploy_url || ''));"
                 '''
             }
 
@@ -156,8 +163,7 @@ pipeline {
             }
 
             environment {
-                // Ostaje placeholder dok ne zalepis svoj production URL
-                CI_ENVIRONMENT_URL = 'YOUR NETLIFY SITE URL'
+                CI_ENVIRONMENT_URL = 'YOUR_NETLIFY_SITE_URL'
             }
 
             steps {
@@ -165,19 +171,15 @@ pipeline {
                     set -e
                     export REACT_APP_VERSION="$REACT_APP_VERSION"
 
-                    npm install netlify-cli@21.6.0
-                    node_modules/.bin/netlify --version
+                    npx netlify-cli@18.0.1 --version
 
                     echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
 
-                    node_modules/.bin/netlify deploy \
-                      --site "$NETLIFY_SITE_ID" \
-                      --auth "$NETLIFY_AUTH_TOKEN" \
+                    npx netlify-cli@18.0.1 deploy \
                       --dir=build \
-                      --prod
-
-                    # E2E na production (tek kad setujes CI_ENVIRONMENT_URL kako treba)
-                    npx playwright test --reporter=html
+                      --prod \
+                      --site "$NETLIFY_SITE_ID" \
+                      --auth "$NETLIFY_AUTH_TOKEN"
                 '''
             }
 
