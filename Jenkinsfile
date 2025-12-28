@@ -63,7 +63,7 @@ pipeline {
                             npm install serve
                             node_modules/.bin/serve -s build &
                             sleep 10
-                            npx playwright test  --reporter=html
+                            npx playwright test --reporter=html
                         '''
                     }
 
@@ -76,48 +76,45 @@ pipeline {
             }
         }
 
-        stage('Deploy staging') {
-    agent {
-        docker {
-            image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
-            reuseNode true
+        stage('Deploy staging + Staging E2E') {
+            agent {
+                docker {
+                    image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
+                    reuseNode true
+                }
+            }
+
+            steps {
+                sh '''
+                    # Netlify CLI latest traži Node 20+, a Playwright image ti je Node 18.x
+                    # Zato pinujemo verziju koja radi na Node 18.
+                    npm install netlify-cli@21.6.0 node-jq
+
+                    node_modules/.bin/netlify --version
+                    echo "Deploying to staging. Site ID: $NETLIFY_SITE_ID"
+
+                    # status bez --site (u nekim verzijama puca)
+                    node_modules/.bin/netlify status || true
+
+                    # deploy (upload build folder, bez build-a na Netlify)
+                    node_modules/.bin/netlify deploy --dir=build --json --no-build \
+                      --site "$NETLIFY_SITE_ID" \
+                      --auth "$NETLIFY_AUTH_TOKEN" > deploy-output.json
+
+                    STAGING_URL=$(node_modules/.bin/node-jq -r '.deploy_url' deploy-output.json)
+                    echo "Staging URL: $STAGING_URL"
+
+                    # Pokreni Playwright testove protiv staging URL-a
+                    CI_ENVIRONMENT_URL="$STAGING_URL" npx playwright test --reporter=html
+                '''
+            }
+
+            post {
+                always {
+                    publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Staging E2E', reportTitles: '', useWrapperFileDirectly: true])
+                }
+            }
         }
-    }
-
-    environment {
-        CI_ENVIRONMENT_URL = 'STAGING_URL_TO_BE_SET'
-    }
-
-    steps {
-        sh '''
-            # PIN: Netlify CLI koji radi na Node 18 (Playwright image)
-            npm install netlify-cli@21.6.0 node-jq
-
-            node_modules/.bin/netlify --version
-            echo "Deploying to staging. Site ID: $NETLIFY_SITE_ID"
-
-            # status bez --site/--auth (u tvojoj verziji puca)
-            node_modules/.bin/netlify status || true
-
-            # deploy sa eksplicitnim site/auth + no-build
-            node_modules/.bin/netlify deploy --dir=build --json --no-build \
-              --site "$NETLIFY_SITE_ID" \
-              --auth "$NETLIFY_AUTH_TOKEN" > deploy-output.json
-
-            CI_ENVIRONMENT_URL=$(node_modules/.bin/node-jq -r '.deploy_url' deploy-output.json)
-            echo "Staging URL: $CI_ENVIRONMENT_URL"
-
-            CI_ENVIRONMENT_URL="$CI_ENVIRONMENT_URL" npx playwright test --reporter=html
-        '''
-    }
-
-    post {
-        always {
-            publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Staging E2E', reportTitles: '', useWrapperFileDirectly: true])
-        }
-    }
-}
-
 
         stage('Approval') {
             steps {
@@ -127,7 +124,7 @@ pipeline {
             }
         }
 
-        stage('Deploy prod') {
+        stage('Deploy prod + Prod E2E') {
             agent {
                 docker {
                     image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
@@ -135,23 +132,23 @@ pipeline {
                 }
             }
 
-            environment {
-                CI_ENVIRONMENT_URL = 'https://astonishing-crostata-78f01e.netlify.app'
-            }
-
             steps {
                 sh '''
-                    node --version
-                    npm install netlify-cli
+                    # Pin Netlify CLI zbog Node 18 u Playwright image-u
+                    npm install netlify-cli@21.6.0
+
                     node_modules/.bin/netlify --version
                     echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
-                    node_modules/.bin/netlify status --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
 
+                    node_modules/.bin/netlify status || true
+
+                    # prod deploy (bez build-a)
                     node_modules/.bin/netlify deploy --dir=build --prod --no-build \
                       --site "$NETLIFY_SITE_ID" \
                       --auth "$NETLIFY_AUTH_TOKEN"
 
-                    CI_ENVIRONMENT_URL="$CI_ENVIRONMENT_URL" npx playwright test --reporter=html
+                    # Prod URL ti je stalni Netlify URL projekta
+                    CI_ENVIRONMENT_URL="https://astonishing-crostata-78f01e.netlify.app" npx playwright test --reporter=html
                 '''
             }
 
