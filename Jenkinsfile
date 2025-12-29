@@ -7,9 +7,20 @@ pipeline {
         REACT_APP_VERSION   = "1.0.${BUILD_ID}"
     }
 
-    options { timestamps() }
+    options {
+        timestamps()
+    }
 
     stages {
+
+        stage('Docker') {
+            steps {
+                sh '''
+                    set -e
+                    docker build -t my-playwright .
+                '''
+            }
+        }
 
         stage('Build') {
             agent {
@@ -22,11 +33,12 @@ pipeline {
                 sh '''
                     set -e
                     echo "REACT_APP_VERSION=$REACT_APP_VERSION"
+                    export REACT_APP_VERSION="$REACT_APP_VERSION"
+
                     node --version
                     npm --version
 
                     npm ci
-                    export REACT_APP_VERSION="$REACT_APP_VERSION"
                     npm run build
 
                     test -f build/index.html
@@ -47,6 +59,9 @@ pipeline {
                     steps {
                         sh '''
                             set -e
+                            echo "REACT_APP_VERSION=$REACT_APP_VERSION"
+                            export REACT_APP_VERSION="$REACT_APP_VERSION"
+
                             npm ci
                             npm test
                         '''
@@ -65,46 +80,30 @@ pipeline {
                             reuseNode true
                         }
                     }
+
                     steps {
                         sh '''
                             set -e
+                            echo "REACT_APP_VERSION=$REACT_APP_VERSION"
+                            export REACT_APP_VERSION="$REACT_APP_VERSION"
 
-                            # očisti stare rezultate da publishHTML ne poludi
+                            # očisti stare reporte da publishHTML ne puca
                             rm -rf playwright-report test-results || true
 
-                            # instaliraj dependencies (mora zbog @playwright/test)
+                            # instaliraj devDependencies (uključuje @playwright/test)
                             npm ci
 
-                            # (opciono) osiguraj browser deps ako ikad fali
-                            # npx playwright install --with-deps
-
-                            # startuj statički server
-                            npx serve -s build -l 3000 >/tmp/serve.log 2>&1 &
-                            SERVE_PID=$!
-
-                            # čekaj da port proradi
-                            for i in $(seq 1 20); do
-                              if curl -sSf http://127.0.0.1:3000 >/dev/null; then
-                                echo "Server is up."
-                                break
-                              fi
-                              echo "Waiting for server..."
-                              sleep 1
-                            done
-
-                            # pokreni testove
+                            # Playwright će podići server kroz webServer u playwright.config.js
                             npx playwright test --reporter=html
-
-                            # ugasi server
-                            kill $SERVE_PID || true
                         '''
                     }
+
                     post {
                         always {
                             publishHTML([
-                                allowMissing: false,
-                                alwaysLinkToLastBuild: false,
-                                keepAll: false,
+                                allowMissing: true,
+                                alwaysLinkToLastBuild: true,
+                                keepAll: true,
                                 reportDir: 'playwright-report',
                                 reportFiles: 'index.html',
                                 reportName: 'Local E2E',
@@ -120,46 +119,91 @@ pipeline {
         stage('Deploy staging') {
             agent {
                 docker {
-                    image 'node:18-alpine'
+                    image 'my-playwright'
                     reuseNode true
                 }
             }
+
+            environment {
+                CI_ENVIRONMENT_URL = 'STAGING_URL_TO_BE_SET'
+            }
+
             steps {
                 sh '''
                     set -e
-                    npm ci
-                    npm i -D netlify-cli node-jq
+                    echo "Deploying to staging. Site ID: $NETLIFY_SITE_ID"
 
-                    echo "Deploying to STAGING. Site ID: $NETLIFY_SITE_ID"
-                    npx netlify status
+                    # netlify i node-jq su u tvom my-playwright image-u (kako si planirao)
+                    netlify --version
 
-                    npx netlify deploy --dir=build --json > deploy-output.json
-                    export CI_ENVIRONMENT_URL=$(npx node-jq -r '.deploy_url' deploy-output.json)
+                    # deploy (preview)
+                    netlify deploy --site "$NETLIFY_SITE_ID" --dir=build --json > deploy-output.json
 
-                    echo "Staging URL: $CI_ENVIRONMENT_URL"
+                    # izvuci deploy_url i prosledi Playwright-u
+                    export CI_ENVIRONMENT_URL="$(node-jq -r '.deploy_url' deploy-output.json)"
+                    echo "STAGING URL: $CI_ENVIRONMENT_URL"
 
-                    # (ako želiš staging E2E ovde, onda prebaci u playwright image + npm ci)
+                    rm -rf playwright-report test-results || true
+                    npx playwright test --reporter=html
                 '''
+            }
+
+            post {
+                always {
+                    publishHTML([
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'playwright-report',
+                        reportFiles: 'index.html',
+                        reportName: 'Staging E2E',
+                        reportTitles: '',
+                        useWrapperFileDirectly: true
+                    ])
+                }
             }
         }
 
         stage('Deploy prod') {
             agent {
                 docker {
-                    image 'node:18-alpine'
+                    image 'my-playwright'
                     reuseNode true
                 }
             }
+
+            environment {
+                CI_ENVIRONMENT_URL = 'YOUR_NETLIFY_SITE_URL'
+            }
+
             steps {
                 sh '''
                     set -e
-                    npm ci
-                    npm i -D netlify-cli
+                    echo "Deploying to production. Site ID: $NETLIFY_SITE_ID"
 
-                    echo "Deploying to PROD. Site ID: $NETLIFY_SITE_ID"
-                    npx netlify status
-                    npx netlify deploy --dir=build --prod
+                    netlify --version
+
+                    # production deploy
+                    netlify deploy --site "$NETLIFY_SITE_ID" --dir=build --prod
+
+                    rm -rf playwright-report test-results || true
+                    npx playwright test --reporter=html
                 '''
+            }
+
+            post {
+                always {
+                    publishHTML([
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'playwright-report',
+                        reportFiles: 'index.html',
+                        reportName: 'Prod E2E',
+                        reportTitles: '',
+                        useWrapperFileDirectly: true
+                    ])
+                }
             }
         }
     }

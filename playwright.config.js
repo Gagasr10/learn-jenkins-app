@@ -26,9 +26,10 @@ module.exports = defineConfig({
   ],
 
   webServer: {
-    command: 'npx serve -s build -l 3000',
-    url: 'http://127.0.0.1:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
-  },
+  command: 'npx serve -s build -l 3000',
+  url: 'http://127.0.0.1:3000',
+  reuseExistingServer: true,
+  timeout: 120000,
+},
+
 });
