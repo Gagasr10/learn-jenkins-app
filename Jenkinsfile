@@ -5,12 +5,9 @@ pipeline {
         NETLIFY_SITE_ID     = '48050a32-ad69-42cc-9c19-dd33ee11812b'
         NETLIFY_AUTH_TOKEN  = credentials('netlify-token')
         REACT_APP_VERSION   = "1.0.${BUILD_ID}"
-        // CI_ENVIRONMENT_URL se postavlja u deploy stage-ovima
     }
 
-    options {
-        timestamps()
-    }
+    options { timestamps() }
 
     stages {
 
@@ -33,7 +30,6 @@ pipeline {
                     npm run build
 
                     test -f build/index.html
-                    ls -la
                 '''
             }
         }
@@ -72,9 +68,35 @@ pipeline {
                     steps {
                         sh '''
                             set -e
-                            # Playwright koristi webServer iz playwright.config.js
-                            # i sam startuje: npx serve -s build -l 3000
+
+                            # očisti stare rezultate da publishHTML ne poludi
+                            rm -rf playwright-report test-results || true
+
+                            # instaliraj dependencies (mora zbog @playwright/test)
+                            npm ci
+
+                            # (opciono) osiguraj browser deps ako ikad fali
+                            # npx playwright install --with-deps
+
+                            # startuj statički server
+                            npx serve -s build -l 3000 >/tmp/serve.log 2>&1 &
+                            SERVE_PID=$!
+
+                            # čekaj da port proradi
+                            for i in $(seq 1 20); do
+                              if curl -sSf http://127.0.0.1:3000 >/dev/null; then
+                                echo "Server is up."
+                                break
+                              fi
+                              echo "Waiting for server..."
+                              sleep 1
+                            done
+
+                            # pokreni testove
                             npx playwright test --reporter=html
+
+                            # ugasi server
+                            kill $SERVE_PID || true
                         '''
                     }
                     post {
@@ -102,16 +124,11 @@ pipeline {
                     reuseNode true
                 }
             }
-
             steps {
                 sh '''
                     set -e
-                    node --version
-                    npm --version
-
                     npm ci
                     npm i -D netlify-cli node-jq
-                    npx netlify --version
 
                     echo "Deploying to STAGING. Site ID: $NETLIFY_SITE_ID"
                     npx netlify status
@@ -121,24 +138,8 @@ pipeline {
 
                     echo "Staging URL: $CI_ENVIRONMENT_URL"
 
-                    # E2E protiv staging URL-a
-                    CI_ENVIRONMENT_URL="$CI_ENVIRONMENT_URL" npx playwright test --reporter=html
+                    # (ako želiš staging E2E ovde, onda prebaci u playwright image + npm ci)
                 '''
-            }
-
-            post {
-                always {
-                    publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: false,
-                        keepAll: false,
-                        reportDir: 'playwright-report',
-                        reportFiles: 'index.html',
-                        reportName: 'Staging E2E',
-                        reportTitles: '',
-                        useWrapperFileDirectly: true
-                    ])
-                }
             }
         }
 
@@ -149,41 +150,16 @@ pipeline {
                     reuseNode true
                 }
             }
-
             steps {
                 sh '''
                     set -e
-                    node --version
-                    npm --version
-
                     npm ci
                     npm i -D netlify-cli
-                    npx netlify --version
 
                     echo "Deploying to PROD. Site ID: $NETLIFY_SITE_ID"
                     npx netlify status
-
                     npx netlify deploy --dir=build --prod
-
-                    # Ako hoćeš da testiraš prod URL:
-                    # export CI_ENVIRONMENT_URL="https://YOUR_SITE.netlify.app"
-                    # CI_ENVIRONMENT_URL="$CI_ENVIRONMENT_URL" npx playwright test --reporter=html
                 '''
-            }
-
-            post {
-                always {
-                    publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: false,
-                        keepAll: false,
-                        reportDir: 'playwright-report',
-                        reportFiles: 'index.html',
-                        reportName: 'Prod E2E',
-                        reportTitles: '',
-                        useWrapperFileDirectly: true
-                    ])
-                }
             }
         }
     }
